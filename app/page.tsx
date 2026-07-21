@@ -51,7 +51,22 @@ const CARDS: Card[] = [
 const CARD_MAP = Object.fromEntries(CARDS.map((card) => [card.id, card])) as Record<string, Card>;
 const initialState: GameState = { started: false, players: [], currentId: 0, cityId: null, dice: Array(6).fill("energy") as DieFace[], held: Array(6).fill(false), rollsLeft: 3, phase: "roll", market: [], deck: [], discard: [], log: [], turn: 1, rollNonce: 0, winnerId: null, pendingYield: null, difficulty: "normal" };
 
-function shuffle<T>(items: T[]) { const copy = [...items]; for (let i = copy.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [copy[i], copy[j]] = [copy[j], copy[i]]; } return copy; }
+function randomIndex(maxExclusive: number) {
+  if (typeof crypto === "undefined" || !crypto.getRandomValues) return Math.floor(Math.random() * maxExclusive);
+  const range = 0x1_0000_0000;
+  const limit = range - (range % maxExclusive);
+  const value = new Uint32Array(1);
+  do crypto.getRandomValues(value); while (value[0] >= limit);
+  return value[0] % maxExclusive;
+}
+function shuffle<T>(items: T[]) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = randomIndex(i + 1);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
 function randomFace(): DieFace { return FACES[Math.floor(Math.random() * FACES.length)]; }
 function hasTrait(player: Player, trait: Trait) { return player.cards.some((id) => CARD_MAP[id]?.trait === trait); }
 function alive(players: Player[]) { return players.filter((player) => !player.eliminated); }

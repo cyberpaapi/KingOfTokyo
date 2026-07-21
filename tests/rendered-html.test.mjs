@@ -14,7 +14,7 @@ test("ships the complete Kaiju Clash game shell", async () => {
 
 test("ships the full rule engine, rooms, sound pack, and optimized art", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-  for (const feature of ["TOGGLE_HOLD", "YIELD_CITY", "SWEEP_MARKET", "BOT_RESOLVE", "checkWinner", "resolveDice", "20 VP", "playerCount", "NEW_MULTI", "/api/rooms/"]) {
+  for (const feature of ["TOGGLE_HOLD", "YIELD_CITY", "SWEEP_MARKET", "BOT_RESOLVE", "checkWinner", "resolveDice", "20 VP", "playerCount", "NEW_MULTI", "/api/rooms/", "crypto.getRandomValues"]) {
     assert.match(page, new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
   }
   assert.equal((page.match(/const KEEP_NAMES = \[/)?.index ?? -1) >= 0, true);
