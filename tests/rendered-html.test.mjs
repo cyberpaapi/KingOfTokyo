@@ -13,12 +13,15 @@ test("ships the complete Kaiju Clash game shell", async () => {
 });
 
 test("ships the full rule engine, rooms, sound pack, and optimized art", async () => {
-  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const [page, cards] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/cards.json", import.meta.url), "utf8").then(JSON.parse),
+  ]);
   for (const feature of ["TOGGLE_HOLD", "YIELD_CITY", "SWEEP_MARKET", "BOT_RESOLVE", "checkWinner", "resolveDice", "20 VP", "playerCount", "NEW_MULTI", "/api/rooms/", "crypto.getRandomValues"]) {
     assert.match(page, new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
   }
-  assert.equal((page.match(/const KEEP_NAMES = \[/)?.index ?? -1) >= 0, true);
-  assert.equal((page.match(/const NOW_NAMES = \[/)?.index ?? -1) >= 0, true);
+  assert.equal(cards.length, 66);
+  assert.ok(cards.every((card) => card.type === "KEEP" || card.type === "DISCARD"));
   const assets = await Promise.all([
     stat(new URL("../public/assets/kaiju-grid-3x3.webp", import.meta.url)),
     stat(new URL("../public/assets/power-grid-2x2.webp", import.meta.url)),
