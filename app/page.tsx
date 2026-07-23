@@ -19,7 +19,7 @@ type Action =
   | { type: "LOAD"; state: GameState }
   | { type: "ROLL" } | { type: "TOGGLE_HOLD"; index: number } | { type: "RESOLVE" }
   | { type: "YIELD_CITY" } | { type: "STAY_CITY" } | { type: "BUY"; cardId: string }
-  | { type: "SWEEP_MARKET" } | { type: "END_TURN" } | { type: "BOT_ROLL"; dice: DieFace[] } | { type: "BOT_RESOLVE" }
+  | { type: "SWEEP_MARKET" } | { type: "END_TURN" } | { type: "FORCE_END" } | { type: "BOT_ROLL"; dice: DieFace[] } | { type: "BOT_RESOLVE" }
   | { type: "USE_POWER"; cardId: string } | { type: "SELL_KEEP"; cardId: string } | { type: "SET_MIMIC"; cardId: string };
 
 const MONSTERS = ["Pyroclast", "Voltwing", "Gravilla", "Tempest Coil", "Prism Claw", "Reactor Jack", "Mecha Mako", "Verdant Titan", "Moonseer"];
@@ -98,7 +98,8 @@ function startNextTurn(state: GameState): GameState {
   players = players.map((p) => { if (p.id !== nextId) return p; const batteryTake = Math.min(2, p.battery); const battery = p.battery - batteryTake; const cards = battery === 0 && p.battery > 0 ? p.cards.filter((id) => CARD_MAP[id]?.ability !== "batteryMonster") : p.cards; return { ...p, cards, battery, energy: p.energy + batteryTake, vp: p.vp + (state.cityId === nextId ? 2 + (hasAbility(p, "urbavore") ? 1 : 0) : 0) }; });
   const winnerId = checkWinner(players); if (winnerId !== null) return { ...state, players, currentId: nextId, winnerId, phase: "over" };
   const count = Math.max(1, 6 + abilityCount(players[nextId], "extraHead") - players[nextId].shrink - penalty);
-  return { ...state, players, currentId: nextId, dice: Array(count).fill("energy") as DieFace[], held: Array(count).fill(false), rollsLeft: 3 + (hasAbility(players[nextId], "giantBrain") ? 1 : 0), phase: "roll", pendingYield: null, extraTurn: null, turn: state.turn + 1, log: [`Turn ${state.turn + 1}: ${players[nextId].name}.`, ...state.log].slice(0, 18) };
+  const visibleDice = state.dice.length === count ? state.dice : Array(count).fill("energy") as DieFace[];
+  return { ...state, players, currentId: nextId, dice: visibleDice, held: Array(count).fill(false), rollsLeft: 3 + (hasAbility(players[nextId], "giantBrain") ? 1 : 0), phase: "roll", pendingYield: null, extraTurn: null, turn: state.turn + 1, log: [`Turn ${state.turn + 1}: ${players[nextId].name}.`, ...state.log].slice(0, 18) };
 }
 function botShouldYield(state: GameState, target: Player, damage: number) { return state.difficulty === "easy" ? target.hp <= 7 || damage >= 3 : state.difficulty === "ruthless" ? target.hp <= 3 : target.hp <= 5 || damage >= 4; }
 function resolveDice(state: GameState, continueBot: boolean): GameState {
@@ -140,6 +141,7 @@ function gameReducer(state: GameState, action: Action): GameState {
   if (action.type === "NEW_MULTI") return makeGame(action.players.map((p) => ({ ...p, bot: false, hp: 10, maxHp: 10, vp: 0, energy: 0, eliminated: false, cards: [], poison: 0, shrink: 0, battery: 0, smoke: 0, mimicCard: null, reborn: false })), "normal");
   if (action.type === "NEW_GAME") { const roster = shuffle(MONSTERS.map((_, i) => i).filter((i) => i !== action.monster)); return makeGame(Array.from({ length: action.playerCount }, (_, i) => ({ id: i, name: i ? BOT_NAMES[i - 1] : MONSTERS[action.monster], bot: i > 0, hp: 10, maxHp: 10, vp: 0, energy: 0, eliminated: false, monster: i ? roster[i - 1] : action.monster, cards: [], poison: 0, shrink: 0, battery: 0, smoke: 0, mimicCard: null, reborn: false })), action.difficulty); }
   if (!state.started || state.phase === "over") return state; const current = state.players[state.currentId];
+  if (action.type === "FORCE_END") return startNextTurn({ ...state, phase: "shop", pendingYield: null });
   if (action.type === "ROLL" && !current.bot && ["roll", "resolve"].includes(state.phase) && state.rollsLeft > 0) { const rolled: GameState = { ...state, dice: state.dice.map((f, i) => state.held[i] ? f : randomFace()), rollsLeft: state.rollsLeft - 1, phase: "resolve", rollNonce: state.rollNonce + 1 }; const canBuyReroll = (hasAbility(current, "telepath") && current.energy >= 1) || (hasAbility(current, "smokeCloud") && current.smoke > 0); return rolled.rollsLeft === 0 && !canBuyReroll ? resolveDice(rolled, false) : rolled; }
   if (action.type === "TOGGLE_HOLD" && !current.bot && state.phase === "resolve") return { ...state, held: state.held.map((v, i) => i === action.index ? !v : v) };
   if (action.type === "RESOLVE" && !current.bot && state.phase === "resolve") return resolveDice(state, false);
@@ -171,7 +173,7 @@ export default function Home() {
   const [setupOpen, setSetupOpen] = useState(true), [rulesOpen, setRulesOpen] = useState(false), [soundOn, setSoundOn] = useState(true), [mode, setMode] = useState<"solo" | "multi">("solo");
   const [name, setName] = useState("Player One"), [joinCode, setJoinCode] = useState(""), [room, setRoom] = useState<Room | null>(null), [roomError, setRoomError] = useState(""), [busy, setBusy] = useState(false);
   const [connection, setConnection] = useState<"online" | "reconnecting">("online");
-  const revisionRef = useRef(0), gameRef = useRef(game), mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const revisionRef = useRef(0), gameRef = useRef(game), mutationQueueRef = useRef<Promise<void>>(Promise.resolve()), pendingMutationsRef = useRef(0);
   const roomCode = room?.code, roomToken = room?.token;
   const current = game.players[game.currentId], cityPlayer = game.cityId === null ? null : game.players[game.cityId], winner = game.winnerId === null ? null : game.players[game.winnerId];
   const localId = room?.playerId ?? 0; const canAct = !!current && !current.bot && (!room || current.id === localId); const canYield = !!game.pendingYield && (!room || game.pendingYield.targetId === localId);
@@ -197,7 +199,10 @@ export default function Home() {
   const act = useCallback((action: Action) => {
     const next = gameReducer(gameRef.current, action); if (next === gameRef.current) return;
     gameRef.current = next; rawDispatch({ type: "LOAD", state: next });
-    if (room) mutationQueueRef.current = mutationQueueRef.current.then(() => sync(next)).catch(() => { setConnection("reconnecting"); });
+    if (room) {
+      pendingMutationsRef.current += 1;
+      mutationQueueRef.current = mutationQueueRef.current.then(() => sync(next)).catch(() => { setConnection("reconnecting"); }).finally(() => { pendingMutationsRef.current = Math.max(0, pendingMutationsRef.current - 1); });
+    }
   }, [room, sync]);
 
   useEffect(() => { gameRef.current = game; }, [game]);
@@ -225,16 +230,24 @@ export default function Home() {
     const watch = async () => {
       while (!cancelled) {
         try {
-          const response = await fetch(apiPath(`/api/rooms/${roomCode}?token=${encodeURIComponent(roomToken)}&since=${revisionRef.current}&wait=15000`), { cache: "no-store" });
+          const response = await fetch(apiPath(`/api/rooms/${roomCode}?token=${encodeURIComponent(roomToken)}&since=${revisionRef.current}&wait=8000&_=${Date.now()}`), { cache: "no-store" });
           if (!response.ok) throw new Error("Room unavailable");
           const data = await response.json() as RoomView;
-          if (data.revision > revisionRef.current) applyRoomView(data, roomToken);
+          if (data.revision > revisionRef.current && pendingMutationsRef.current === 0) applyRoomView(data, roomToken);
+          else if (data.revision > revisionRef.current) { revisionRef.current = data.revision; setRoom((r) => r ? { ...r, revision: data.revision, players: data.players, status: data.status } : r); setConnection("online"); }
           else { setRoom((r) => r ? { ...r, players: data.players, status: data.status } : r); setConnection("online"); }
-        } catch { if (!cancelled) { setConnection("reconnecting"); await new Promise((resolve) => setTimeout(resolve, 700)); } }
+        } catch { if (!cancelled) { setConnection("reconnecting"); await new Promise((resolve) => setTimeout(resolve, 350)); } }
       }
     };
     void watch(); return () => { cancelled = true; };
   }, [roomCode, roomToken, applyRoomView]);
+  useEffect(() => {
+    if (!game.started || game.phase !== "shop" || !canAct || !current) return;
+    const available = [...game.market, ...(hasAbility(current, "madeInLab") && game.deck[0] ? [game.deck[0]] : [])];
+    if (available.some((id) => CARD_MAP[id] && current.energy >= price(current, CARD_MAP[id]))) return;
+    const timer = window.setTimeout(() => act({ type: "FORCE_END" }), 0);
+    return () => clearTimeout(timer);
+  }, [game.started, game.phase, game.market, game.deck, game.currentId, current, canAct, act]);
   useEffect(() => { if (game.phase === "over" && winner) play("victory-roar"); }, [game.phase, winner, play]);
 
   const scorePreview = useMemo(() => { if (!game.started || game.phase === "roll") return "Roll, then tap dice to lock them."; const c = game.dice.reduce<Record<string, number>>((a, f) => ({ ...a, [f]: (a[f] ?? 0) + 1 }), {}); return `${c.smash ?? 0} POW · ${c.heart ?? 0} HEAL · ${c.energy ?? 0} ENERGY`; }, [game]);
@@ -263,6 +276,7 @@ export default function Home() {
       <div className="loadout-list">{(localPlayer?.cards ?? []).map((id) => { const card = CARD_MAP[id]; const activeTurn = canAct && current?.id === localId; return <article className="loadout-card" key={id}><span aria-hidden>⚙</span><div><b>{card.name}</b><p>{card.description}</p>
         <div className="card-controls">{card.ability === "rapidHealing" && <button disabled={!activeTurn || (localPlayer?.energy ?? 0) < 2 || (localPlayer?.hp ?? 0) >= (localPlayer?.maxHp ?? 10)} onClick={() => act({ type: "USE_POWER", cardId: id })}>HEAL · 2⚡</button>}{card.ability === "telepath" && <button disabled={!activeTurn || game.phase !== "resolve" || (localPlayer?.energy ?? 0) < 1} onClick={() => act({ type: "USE_POWER", cardId: id })}>EXTRA REROLL · 1⚡</button>}{card.ability === "smokeCloud" && <button disabled={!activeTurn || game.phase !== "resolve" || (localPlayer?.smoke ?? 0) < 1} onClick={() => act({ type: "USE_POWER", cardId: id })}>SPEND SMOKE · {localPlayer?.smoke ?? 0}</button>}{localPlayer && hasAbility(localPlayer, "metamorph") && game.phase === "shop" && activeTurn && <button onClick={() => act({ type: "SELL_KEEP", cardId: id })}>METAMORPH · +{card.cost}⚡</button>}</div>
         {card.ability === "mimic" && <label className="mimic-picker">MIMIC TOKEN<select value={localPlayer?.mimicCard ?? ""} disabled={!activeTurn || game.phase !== "shop"} onChange={(event) => event.target.value && act({ type: "SET_MIMIC", cardId: event.target.value })}><option value="">Choose rival power…</option>{mimicOptions.map((option) => <option key={`${option.owner}-${option.id}`} value={option.id}>{option.owner}: {option.card.name}</option>)}</select></label>}</div><small>KEEP</small></article>; })}</div>{!(localPlayer?.cards ?? []).length && <p>Buy KEEP cards to build your monster.</p>}</article></section>
+    <section className="force-end-bar"><div><b>TURN STUCK?</b><span>Skip every remaining action and pass control to the next monster.</span></div><button onClick={() => act({ type: "FORCE_END" })} disabled={!game.started || !canAct || game.phase === "over"}>FORCE END →</button></section>
 
     {setupOpen && <div className="modal-backdrop"><section className="setup-modal"><button className="modal-close" onClick={() => game.started && setSetupOpen(false)} disabled={!game.started}>CLOSE</button><span className="eyebrow">ORIGINAL BROWSER BOARD GAME</span><h1>PICK YOUR MONSTER!</h1><p>Roll. Wreck. Rule Tokyo. First to 20 stars—or last monster standing—wins.</p><div className="mode-tabs"><button className={mode === "solo" ? "active" : ""} onClick={() => { setMode("solo"); setRoom(null); }}>SINGLE PLAYER</button><button className={mode === "multi" ? "active" : ""} onClick={() => setMode("multi")}>MULTIPLAYER</button></div><div className="monster-picker">{MONSTERS.map((n, i) => <button key={n} className={monster === i ? "selected" : ""} onClick={() => setMonster(i)}><Avatar monster={i}/><span>{n}</span></button>)}</div>
       {mode === "solo" ? <div className="setup-options"><label>MONSTERS<select value={playerCount} onChange={(e) => setPlayerCount(Number(e.target.value))}>{[2,3,4,5,6].map((n) => <option key={n}>{n}</option>)}</select></label><label>CPU LEVEL<select value={difficulty} onChange={(e) => setDifficulty(e.target.value as GameState["difficulty"])}><option value="easy">Easy</option><option value="normal">Normal</option><option value="ruthless">Ruthless</option></select></label><button className="launch" onClick={startSolo}>PLAY SOLO!</button></div> : room ? <div className="lobby"><div className="room-code"><span>ROOM CODE</span><b>{room.code}</b><button onClick={() => navigator.clipboard.writeText(room.code)}>COPY</button></div><div className="lobby-list">{room.players.map((p) => <span key={p.id}><Avatar monster={p.monster} size="small"/><b>{p.name}</b>{p.id === 0 && <small>HOST</small>}</span>)}</div>{room.host ? <button className="launch" disabled={room.players.length < 2} onClick={startRoom}>{room.players.length < 2 ? "WAITING FOR A RIVAL…" : "START ONLINE MATCH!"}</button> : <p className="waiting-copy">The host will launch when everyone is ready.</p>}</div> : <div className="online-setup"><label>YOUR NAME<input value={name} maxLength={22} onChange={(e) => setName(e.target.value)}/></label><div><button className="launch" disabled={busy} onClick={createRoom}>CREATE ROOM</button><span>OR</span><input aria-label="Room code" placeholder="ROOM CODE" value={joinCode} maxLength={6} onChange={(e) => setJoinCode(e.target.value.toUpperCase())}/><button className="join" disabled={busy || joinCode.length < 6} onClick={joinRoom}>JOIN</button></div>{roomError && <p className="error">{roomError}</p>}</div>}<small className="original-note">66 original power cards · 9 original kaiju · real-time rooms · Higgsfield sound design</small></section></div>}

@@ -40,7 +40,7 @@ export async function GET(request: Request, context: { params: Promise<{ code: s
   if (view === false) return json({ error: "Invalid room token" }, { status: 403 });
   const deadline = Date.now() + waitMs;
   while (waitMs > 0 && view.revision <= since && Date.now() < deadline) {
-    await pause(300);
+    await pause(100);
     const latest = await getD1().prepare("SELECT revision FROM game_rooms WHERE code = ?").bind(roomCode).first<{ revision: number }>();
     if (!latest) return json({ error: "Room not found" }, { status: 404 });
     if (latest.revision > since) {
