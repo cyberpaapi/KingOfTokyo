@@ -36,7 +36,7 @@ test("ships resumable low-latency rooms and specialized card tokens", async () =
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/rooms/[code]/route.ts", import.meta.url), "utf8"),
   ]);
-  for (const feature of ["ROOM_SESSION_KEY", "since=", "wait=8000", "pendingMutationsRef", "FORCE_END", "FORCE END", "USE_POWER", "SET_MIMIC", "POISON", "SHRINK", "SMOKE", "MIMIC TOKEN"]) {
+  for (const feature of ["ROOM_SESSION_KEY", "since=", "wait=8000", "pendingMutationsRef", "playAgain", "onClick={playAgain}", "FORCE_END", "FORCE END", "USE_POWER", "SET_MIMIC", "POISON", "SHRINK", "SMOKE", "MIMIC TOKEN"]) {
     assert.match(page, new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
   }
   for (const feature of ["await pause(100)", "resumed: true", "revision = revision + 1", "WHERE code = ? AND revision = ?"]) {
