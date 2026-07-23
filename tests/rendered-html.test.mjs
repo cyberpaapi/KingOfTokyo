@@ -30,3 +30,16 @@ test("ships the full rule engine, rooms, sound pack, and optimized art", async (
   ]);
   assert.ok(assets.every((asset) => asset.size > 5_000));
 });
+
+test("ships resumable low-latency rooms and specialized card tokens", async () => {
+  const [page, roomApi] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/rooms/[code]/route.ts", import.meta.url), "utf8"),
+  ]);
+  for (const feature of ["ROOM_SESSION_KEY", "since=", "wait=15000", "USE_POWER", "SET_MIMIC", "POISON", "SHRINK", "SMOKE", "MIMIC TOKEN"]) {
+    assert.match(page, new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+  }
+  for (const feature of ["await pause(300)", "resumed: true", "revision = revision + 1", "WHERE code = ? AND revision = ?"]) {
+    assert.match(roomApi, new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+  }
+});

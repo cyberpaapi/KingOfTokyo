@@ -2,7 +2,7 @@ import { getD1 } from "../../../db";
 
 const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const code = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (n) => alphabet[n % alphabet.length]).join("");
-const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
+const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", "Cache-Control": "no-store" };
 const json = (data: unknown, init?: ResponseInit) => Response.json(data, { ...init, headers: cors });
 
 export async function OPTIONS() {
